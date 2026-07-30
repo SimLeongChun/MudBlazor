@@ -1,0 +1,28 @@
+name: Sync fork with upstream
+
+on:
+  schedule:
+    # Every day at 12:00 AM Singapore time
+    - cron: "0 16 * * *"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Sync default branch with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/merge-upstream" \
+            -f branch="$BRANCH"
