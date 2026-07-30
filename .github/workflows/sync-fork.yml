@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
@@ -21,8 +22,12 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          echo "Repository: $REPOSITORY"
+          echo "Default branch: $BRANCH"
+
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
             "/repos/$REPOSITORY/merge-upstream" \
             -f branch="$BRANCH"
