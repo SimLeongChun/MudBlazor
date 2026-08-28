@@ -159,6 +159,13 @@ namespace MudBlazor.UnitTests.Components
             comp.FindAll("td")[0].TextContent.Trim().Should().Be("C");
             comp.FindAll("td")[1].TextContent.Trim().Should().Be("B");
             comp.FindAll("td")[2].TextContent.Trim().Should().Be("A");
+            // descending -> unsorted
+            await comp.Find("span.mud-clickable.mud-table-sort-label").ClickAsync();
+            // unsorted -> ascending
+            await comp.Find("span.mud-clickable.mud-table-sort-label").ClickAsync();
+            comp.FindAll("td")[0].TextContent.Trim().Should().Be("A");
+            comp.FindAll("td")[1].TextContent.Trim().Should().Be("B");
+            comp.FindAll("td")[2].TextContent.Trim().Should().Be("C");
 
             comp = Context.Render<TableInitialSortDirectionTest>(parameters => parameters
                 .Add(p => p.InitialSortDirection, SortDirection.Ascending));
@@ -3636,6 +3643,36 @@ namespace MudBlazor.UnitTests.Components
                 EqualsCalls = 0;
                 GetHashCodeCalls = 0;
             }
+        }
+        /// <summary>
+        /// The select-all checkbox must follow the rows as they are checked one at a time.
+        /// </summary>
+        /// <remarks>
+        /// The header used to pick this up only because changing one row re-rendered the whole table.
+        /// This case binds nothing, because a bound <c>SelectedItems</c> re-renders the table anyway and hides the problem.
+        /// </remarks>
+        [Test]
+        public void TableMultiSelection_CheckingRowsIndividually_UpdatesSelectAllCheckbox()
+        {
+            var comp = Context.Render<TableMultiSelectionHeaderStateTest>();
+            var header = () => comp.Find("thead .mud-checkbox span").ClassList;
+            var rowBoxes = () => comp.FindAll("tbody .mud-checkbox input");
+            var rowCount = rowBoxes().Count;
+
+            header().Should().Contain("mud-checkbox-false");
+
+            rowBoxes()[0].Change(true);
+            header().Should().Contain("mud-checkbox-null", "some but not all rows are selected");
+
+            for (var i = 1; i < rowCount; i++)
+            {
+                rowBoxes()[i].Change(true);
+            }
+
+            header().Should().Contain("mud-checkbox-true", "every row is selected");
+
+            rowBoxes()[0].Change(false);
+            header().Should().Contain("mud-checkbox-null", "a row was deselected again");
         }
     }
 }
