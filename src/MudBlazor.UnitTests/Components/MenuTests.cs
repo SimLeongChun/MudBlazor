@@ -434,6 +434,22 @@ namespace MudBlazor.UnitTests.Components
         }
 
         /// <summary>
+        /// Menu item text uses body1 typography, or body2 in a dense menu.
+        /// </summary>
+        [Test]
+        [TestCase(false, "mud-typography mud-typography-body1 mud-menu-item-text")]
+        [TestCase(true, "mud-typography mud-typography-body2 mud-menu-item-text")]
+        public async Task MenuItem_TextTypography_FollowsDense(bool dense, string expectedClass)
+        {
+            var comp = Context.Render<MenuItemIconTest>(parameters => parameters.Add(p => p.Dense, dense));
+
+            await comp.Find(".mud-menu-button-activator").ClickAsync();
+            await comp.WaitForElementAsync("div.mud-popover-open");
+
+            comp.FindAll("div.mud-menu-item p").Should().HaveCount(3).And.OnlyContain(text => text.ClassName == expectedClass);
+        }
+
+        /// <summary>
         /// https://github.com/MudBlazor/MudBlazor/issues/6645
         /// </summary>
         [Test]
@@ -1643,5 +1659,62 @@ namespace MudBlazor.UnitTests.Components
             activator.GetAttribute("aria-expanded").Should().Be("false");
             activator.HasAttribute("aria-controls").Should().BeFalse();
         }
+
+        /// <summary>
+        /// Menu items render an anchor with its link attributes when Href is set, and a div otherwise.
+        /// </summary>
+        [Test]
+        public async Task MenuItems_RenderAnchorWhenHrefIsSet()
+        {
+            var comp = Context.Render<MenuTest1>();
+            await comp.Find("button.mud-button-root").ClickAsync();
+
+            comp.FindAll("div.mud-menu-item").Count.Should().Be(2);
+            var links = comp.FindAll("a.mud-menu-item");
+            links.Count.Should().Be(2);
+            links[0].GetAttribute("href").Should().Be("https://www.test.com");
+            links[1].GetAttribute("target").Should().Be("_blank");
+        }
+
+        /// <summary>
+        /// A class or style supplied through UserAttributes keeps winning over the computed ones, as it did through the MudElement boundary.
+        /// </summary>
+        [Test]
+        public void MenuItem_UserAttributes_OverrideComputedClassAndStyle()
+        {
+            var comp = Context.Render<MudMenuItem>(parameters => parameters
+                .Add(x => x.Label, "Copy")
+                .Add(x => x.UserAttributes, new Dictionary<string, object>
+                {
+                    ["class"] = "user-class",
+                    ["style"] = "color:red",
+                }));
+
+            var row = comp.Find("div");
+            row.GetAttribute("class").Should().Be("user-class");
+            row.GetAttribute("style").Should().Be("color:red");
+        }
+
+        /// <summary>
+        /// The same precedence holds on the anchor row.
+        /// </summary>
+        [Test]
+        public void MenuItemWithHref_UserAttributes_OverrideComputedClassAndStyle()
+        {
+            var comp = Context.Render<MudMenuItem>(parameters => parameters
+                .Add(x => x.Label, "Docs")
+                .Add(x => x.Href, "/docs")
+                .Add(x => x.UserAttributes, new Dictionary<string, object>
+                {
+                    ["class"] = "user-class",
+                    ["style"] = "color:red",
+                }));
+
+            var row = comp.Find("a");
+            row.GetAttribute("class").Should().Be("user-class");
+            row.GetAttribute("style").Should().Be("color:red");
+            row.GetAttribute("href").Should().Be("/docs");
+        }
+
     }
 }
