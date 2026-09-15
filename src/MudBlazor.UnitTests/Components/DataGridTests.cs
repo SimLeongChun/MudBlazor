@@ -2242,6 +2242,33 @@ namespace MudBlazor.UnitTests.Components
             comp.Instance.Items[0].SubItem.SubItem2.SubProperty2.Should().Be("Test 3");
         }
 
+        /// <summary>
+        /// Clicking a group's expander renders only that group, and the grid keeps the new state when it renders again.
+        /// </summary>
+        [Test]
+        public async Task DataGridGroupExpander_RendersOnlyItsGroup()
+        {
+            var comp = Context.Render<DataGridGroupExpandedTest>();
+            var dataGrid = comp.FindComponent<MudDataGrid<DataGridGroupExpandedTest.Fruit>>();
+            var groupRows = dataGrid.FindComponents<DataGridGroupRow<DataGridGroupExpandedTest.Fruit>>();
+            groupRows.Count.Should().Be(2);
+            var otherGroupRenders = groupRows[1].RenderCount;
+
+            await groupRows[0].Find(".mud-table-row-expander").ClickAsync();
+
+            dataGrid.Markup.Should().NotContain("Apple").And.Contain("Orange");
+            groupRows[1].RenderCount.Should().Be(otherGroupRenders);
+
+            // A grid render afterwards keeps the collapsed group collapsed and the other one expanded.
+            await comp.InvokeAsync(() => dataGrid.Instance.SetSortAsync("Count", SortDirection.Descending, x => x.Count));
+
+            dataGrid.Markup.Should().NotContain("Apple").And.Contain("Orange");
+
+            await dataGrid.FindComponents<DataGridGroupRow<DataGridGroupExpandedTest.Fruit>>()[0].Find(".mud-table-row-expander").ClickAsync();
+
+            dataGrid.Markup.Should().Contain("Apple").And.Contain("Orange");
+        }
+
         [Test]
         public void DataGridOnContextMenuClickWhenIsGrouped()
         {
@@ -5025,6 +5052,23 @@ namespace MudBlazor.UnitTests.Components
         }
 
         /// <summary>
+        /// Opening a column filter menu does not re-render the grid while the columns panel is closed.
+        /// </summary>
+        [Test]
+        public async Task DataGridColumnFilterMenu_OpeningFilter_DoesNotRerenderGrid()
+        {
+            var comp = Context.Render<DataGridColumnFilterMenuTest>();
+            var headerCells = comp.FindComponents<HeaderCell<DataGridColumnFilterMenuTest.Model>>();
+            var otherHeaderCellRenders = headerCells.Skip(1).Select(cell => cell.RenderCount).ToList();
+
+            await headerCells[0].Find(".filter-button").ClickAsync();
+
+            comp.FindAll(".mud-popover.column-filter-popup.mud-popover-open").Count.Should().Be(1);
+            // A grid render re-renders every header cell, so the other columns' cells show whether the grid rendered.
+            headerCells.Skip(1).Select(cell => cell.RenderCount).Should().Equal(otherHeaderCellRenders);
+        }
+
+        /// <summary>
         /// Enter in the column filter menu's value box applies the filter, and Escape clears it.
         /// </summary>
         /// <remarks>
@@ -5049,6 +5093,58 @@ namespace MudBlazor.UnitTests.Components
 
             dataGrid.Instance.FilterDefinitions.Should().BeEmpty();
             dataGrid.FindAll("tbody tr").Count.Should().Be(4);
+            comp.FindAll(".mud-popover.column-filter-popup.mud-popover-open").Should().BeEmpty();
+        }
+
+        /// <summary>
+        /// Enter in the column filter menu closes the menu when applying the filter finishes after an await, whether in a <c>FilterChanged</c> handler or a server load.
+        /// </summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task DataGridColumnFilterMenu_EnterAfterAwait_ClosesMenu(bool serverSide)
+        {
+            var comp = Context.Render<DataGridColumnFilterMenuGateTest>(parameters => parameters.Add(x => x.ServerSide, serverSide));
+            var dataGrid = comp.FindComponent<MudDataGrid<DataGridColumnFilterMenuGateTest.Model>>();
+            comp.WaitForAssertion(() => dataGrid.FindAll("tbody tr").Count.Should().Be(4));
+
+            await comp.Find(".filter-button").ClickAsync();
+            await comp.Find(".filter-input input").InputAsync(new ChangeEventArgs { Value = "Ira" });
+
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            comp.Instance.Gate = gate;
+            var keyDown = comp.Find(".filter-input input").KeyDownAsync(new KeyboardEventArgs { Key = "Enter" });
+            gate.SetResult();
+            await keyDown;
+
+            comp.WaitForAssertion(() => dataGrid.FindAll("tbody tr").Count.Should().Be(1));
+            comp.FindAll(".mud-popover.column-filter-popup.mud-popover-open").Should().BeEmpty();
+        }
+
+        /// <summary>
+        /// Escape in the column filter menu closes the menu when clearing the filter reloads server data after an await.
+        /// </summary>
+        [Test]
+        public async Task DataGridColumnFilterMenu_EscapeAfterServerLoad_ClosesMenu()
+        {
+            var comp = Context.Render<DataGridColumnFilterMenuGateTest>(parameters => parameters.Add(x => x.ServerSide, true));
+            var dataGrid = comp.FindComponent<MudDataGrid<DataGridColumnFilterMenuGateTest.Model>>();
+            comp.WaitForAssertion(() => dataGrid.FindAll("tbody tr").Count.Should().Be(4));
+
+            await comp.Find(".filter-button").ClickAsync();
+            await comp.Find(".filter-input input").InputAsync(new ChangeEventArgs { Value = "Ira" });
+            await comp.Find(".apply-filter-button").ClickAsync();
+            comp.WaitForAssertion(() => dataGrid.FindAll("tbody tr").Count.Should().Be(1));
+
+            await comp.Find(".filter-button").ClickAsync();
+            comp.FindAll(".mud-popover.column-filter-popup.mud-popover-open").Count.Should().Be(1);
+
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            comp.Instance.Gate = gate;
+            var keyDown = comp.Find(".filter-input input").KeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
+            gate.SetResult();
+            await keyDown;
+
+            comp.WaitForAssertion(() => dataGrid.FindAll("tbody tr").Count.Should().Be(4));
             comp.FindAll(".mud-popover.column-filter-popup.mud-popover-open").Should().BeEmpty();
         }
 
@@ -5494,6 +5590,62 @@ namespace MudBlazor.UnitTests.Components
                     await clearButton.ClickAsync();
                 }
             }
+        }
+
+        /// <summary>
+        /// Applying a filter-row value outside an event, as a select or picker does after an await, renders the grid once.
+        /// </summary>
+        [Test]
+        public async Task DataGridFilterRow_ApplyingValue_RendersGridOnce()
+        {
+            var items = new List<TestDataItem> { new() { Id = 1, Name = "A" }, new() { Id = 2, Name = "AB" } };
+            var comp = Context.Render<MudDataGrid<TestDataItem>>(parameters => parameters
+                .Add(p => p.Items, items)
+                .Add(p => p.Filterable, true)
+                .Add(p => p.FilterMode, DataGridFilterMode.ColumnFilterRow)
+                .Add(p => p.Columns, NamePropertyColumnWithTextCell));
+            var nameCell = comp.FindComponent<FilterHeaderCell<TestDataItem>>();
+            var definition = nameCell.Instance.Column.FilterContext.FilterDefinition!;
+            definition.Operator = FilterOperator.String.Contains;
+            definition.Value = "A";
+            // The MudText in a row's cell renders once per grid render and has nothing of its own to render.
+            var rowText = comp.FindComponents<MudText>()[0];
+            var rowTextRenders = rowText.RenderCount;
+
+            await comp.InvokeAsync(() => nameCell.Instance.ApplyFilterAsync(definition));
+
+            comp.FindAll("tbody tr").Count.Should().Be(2);
+            (rowText.RenderCount - rowTextRenders).Should().Be(1);
+        }
+
+        /// <summary>
+        /// The filtered rows show while an asynchronous FilterChanged handler is still running.
+        /// </summary>
+        [Test]
+        public async Task DataGridFilterRow_ApplyingValue_ShowsRowsBeforeFilterChangedCompletes()
+        {
+            var items = new List<TestDataItem> { new() { Id = 1, Name = "A" }, new() { Id = 2, Name = "B" } };
+            var filterChangedGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var comp = Context.Render<MudDataGrid<TestDataItem>>(parameters => parameters
+                .Add(p => p.Items, items)
+                .Add(p => p.Filterable, true)
+                .Add(p => p.FilterMode, DataGridFilterMode.ColumnFilterRow)
+                .Add(p => p.FilterChanged, (IReadOnlyCollection<IFilterDefinition<TestDataItem>> _) => filterChangedGate.Task)
+                .Add(p => p.Columns, NamePropertyColumn));
+            var nameCell = comp.FindComponent<FilterHeaderCell<TestDataItem>>();
+            var definition = nameCell.Instance.Column.FilterContext.FilterDefinition!;
+            definition.Operator = FilterOperator.String.Equal;
+            definition.Value = "A";
+
+            var applying = comp.InvokeAsync(() => nameCell.Instance.ApplyFilterAsync(definition));
+
+            comp.FindAll("tbody tr").Count.Should().Be(1);
+            applying.IsCompleted.Should().BeFalse();
+
+            filterChangedGate.SetResult();
+            await applying;
+
+            comp.FindAll("tbody tr").Count.Should().Be(1);
         }
 
         [Test]
@@ -7465,6 +7617,29 @@ namespace MudBlazor.UnitTests.Components
             public string Name { get; set; }
             public bool ShouldBeDisabled { get; set; }
         }
+
+        private static RenderFragment NamePropertyColumn => builder =>
+        {
+            builder.OpenComponent<PropertyColumn<TestDataItem, string>>(0);
+            builder.AddAttribute(1, nameof(PropertyColumn<TestDataItem, string>.Property), (Expression<Func<TestDataItem, string>>)(x => x.Name));
+            builder.CloseComponent();
+        };
+
+        private static RenderFragment NamePropertyColumnWithTextCell => builder =>
+        {
+            builder.OpenComponent<PropertyColumn<TestDataItem, string>>(0);
+            builder.AddAttribute(1, nameof(PropertyColumn<TestDataItem, string>.Property), (Expression<Func<TestDataItem, string>>)(x => x.Name));
+            builder.CloseComponent();
+            builder.OpenComponent<TemplateColumn<TestDataItem>>(2);
+            builder.AddAttribute(3, nameof(TemplateColumn<TestDataItem>.Filterable), false);
+            builder.AddAttribute(4, nameof(TemplateColumn<TestDataItem>.CellTemplate), (RenderFragment<CellContext<TestDataItem>>)(context => textBuilder =>
+            {
+                textBuilder.OpenComponent<MudText>(0);
+                textBuilder.AddAttribute(1, nameof(MudText.ChildContent), (RenderFragment)(content => content.AddContent(0, context.Item.Name)));
+                textBuilder.CloseComponent();
+            }));
+            builder.CloseComponent();
+        };
 
         private static RenderFragment SelectColumnWithFunc => builder =>
         {

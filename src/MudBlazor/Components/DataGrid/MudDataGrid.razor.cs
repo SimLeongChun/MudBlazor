@@ -2924,6 +2924,20 @@ namespace MudBlazor
             StateHasChanged();
         }
 
+        /// <summary>
+        /// Hides the columns panel only when it is open.
+        /// </summary>
+        /// <remarks>
+        /// A column filter menu lives in its header cell, so opening one renders that cell and needs a grid render only to close an open columns panel.
+        /// </remarks>
+        internal void HideColumnsPanelIfVisible()
+        {
+            if (_columnsPanelVisible)
+            {
+                HideColumnsPanel();
+            }
+        }
+
         private Task ColumnOrderUpdated(MudItemDropInfo<Column<T>> dropItem)
         {
             Debug.Assert(dropItem.Item is not null);
@@ -3140,6 +3154,19 @@ namespace MudBlazor
         /// <param name="expanded">Whether the group should be expanded (true) or collapsed (false).</param>
         public void ToggleGroupExpand(string? columnName, object? key, bool expanded)
         {
+            SetGroupExpanded(columnName, key, expanded);
+            StateHasChanged();
+        }
+
+        /// <summary>
+        /// Records whether a group is expanded without rendering the grid.
+        /// </summary>
+        /// <remarks>
+        /// A group row renders its own rows, so a click on its expander only needs that row to render.
+        /// The grid reads the recorded state the next time it renders.
+        /// </remarks>
+        internal void SetGroupExpanded(string? columnName, object? key, bool expanded)
+        {
             var groupKey = new GroupKey(columnName, key);
 
             // update the expansion state for _groupExpansionsDict
@@ -3152,7 +3179,6 @@ namespace MudBlazor
                 _groupExpansionsDict[groupKey] = expanded;
 
             _groupInitialExpanded = false;
-            StateHasChanged();
         }
 
         /// <summary>
