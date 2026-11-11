@@ -972,5 +972,61 @@ namespace MudBlazor.UnitTests.Charts
             // All points render as circles: (2+1) × 2 = 6
             comp.FindAll("circle.mud-chart-point").Count.Should().Be(6);
         }
+
+        /// <summary>
+        /// A scatter line series holding a single reading draws that reading as a dot.
+        /// </summary>
+        [Test]
+        public void ScatterPlotLineSeriesLonePointRendersAsDot()
+        {
+            var lineSeries = new ChartSeries<double> { Name = "Trend", Data = Points((10, 20)) };
+            var series = new List<ChartSeries<double>> { lineSeries };
+
+            var comp = Context.Render<ScatterPlot<double>>(parameters => parameters
+                .Add(p => p.ChartSeries, series)
+                .Add(p => p.ChartOptions, new ScatterPlotChartOptions
+                {
+                    ChartPalette = _palette,
+                    SeriesDisplayOverrides = new Dictionary<IChartSeries, SeriesDisplayOverride>
+                    {
+                        [lineSeries] = new ScatterSeriesDisplayOverride { ScatterSeriesType = ScatterSeriesType.Line }
+                    }
+                }));
+
+            // One reading leaves the series line as a bare move, which paints nothing.
+            comp.Find("path.mud-chart-line:not(.mud-chart-dots)").GetAttribute("d").Should().NotContain("L");
+
+            var dots = comp.Find("path.mud-chart-dots");
+            (dots.GetAttribute("d")!.Split('L').Length - 1).Should().Be(1, because: "the lone reading gets drawn");
+            dots.GetAttribute("stroke-linecap").Should().Be("round", because: "a zero-length segment only paints under a round cap");
+        }
+
+        /// <summary>
+        /// Hovering a point keeps its marker under the hover circle instead of taking it out of the chart.
+        /// </summary>
+        [Test]
+        public async Task ScatterPlotHoverKeepsEveryMarker()
+        {
+            var series = new List<ChartSeries<double>>
+            {
+                new() { Name = "S1", Data = Points((10, 20), (20, 30), (30, 10), (40, 40)) }
+            };
+
+            var comp = Context.Render<ScatterPlot<double>>(parameters => parameters
+                .Add(p => p.ChartSeries, series)
+                .Add(p => p.ChartOptions, new ScatterPlotChartOptions
+                {
+                    ChartPalette = _palette,
+                    ShowToolTips = true,
+                }));
+
+            int MarkerCount() => comp.FindAll("circle.mud-chart-point").Count(x => !x.HasAttribute("opacity"));
+            MarkerCount().Should().Be(4);
+
+            await comp.FindAll("circle.mud-chart-point[opacity]")[1].MouseOverAsync();
+
+            // Leaving the hovered marker out shifted the sequence numbers of every point drawn after it, so each hover rebuilt all of them.
+            MarkerCount().Should().Be(4);
+        }
     }
 }

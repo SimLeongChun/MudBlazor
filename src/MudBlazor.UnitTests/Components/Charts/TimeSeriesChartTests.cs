@@ -479,5 +479,79 @@ namespace MudBlazor.UnitTests.Charts
             chartSeries[2].Visible.Should().BeTrue("Pressure Visible property should be true after showing");
             comp.FindAll($"path.mud-chart-line{series3}").Count.Should().Be(1, "Pressure series path should be visible");
         }
+
+        /// <summary>
+        /// A time series holding a single reading draws that reading as a dot.
+        /// </summary>
+        [Test]
+        public void TimeSeriesChartLonePointRendersAsDot()
+        {
+            SetupBBoxInterop();
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Timeseries)
+                .Add(p => p.ChartSeries, BuildSeries(new DateTime(2000, 1, 1), count: 1))
+                .Add(p => p.ChartOptions, new TimeSeriesChartOptions { TimeLabelSpacing = TimeSpan.FromHours(1) }));
+
+            // One reading leaves the series line as a bare move, which paints nothing.
+            comp.Find("path.mud-chart-line:not(.mud-chart-dots)").GetAttribute("d").Should().NotContain("L");
+
+            var dots = comp.Find("path.mud-chart-dots");
+            (dots.GetAttribute("d")!.Split('L').Length - 1).Should().Be(1, because: "the lone reading gets drawn");
+            dots.GetAttribute("stroke-linecap").Should().Be("round", because: "a zero-length segment only paints under a round cap");
+        }
+
+        /// <summary>
+        /// Data markers are drawn as rings, and when tooltips are turned off.
+        /// </summary>
+        [Test]
+        public void TimeSeriesChartDataMarkersAreRingsAndRenderWithoutTooltips()
+        {
+            SetupBBoxInterop();
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Timeseries)
+                .Add(p => p.ChartSeries, BuildSeries(new DateTime(2000, 1, 1)))
+                .Add(p => p.ChartOptions, new TimeSeriesChartOptions
+                {
+                    TimeLabelSpacing = TimeSpan.FromHours(1),
+                    ShowDataMarkers = true,
+                    ShowToolTips = false
+                }));
+
+            // With tooltips off the hover targets are left out, so each point is drawn exactly once.
+            var markers = comp.FindAll("circle.mud-chart-point");
+
+            markers.Should().HaveCount(4);
+            markers.Should().OnlyContain(x => x.GetAttribute("fill") == "none");
+        }
+
+        /// <summary>
+        /// Hovering a point keeps its marker under the hover circle instead of taking it out of the chart.
+        /// </summary>
+        [Test]
+        public async Task TimeSeriesChartHoverKeepsEveryMarker()
+        {
+            SetupBBoxInterop();
+            var time = new DateTime(2000, 1, 1);
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Timeseries)
+                .Add(p => p.ChartSeries, BuildSeries(time, count: 4))
+                .Add(p => p.ChartOptions, new TimeSeriesChartOptions
+                {
+                    TimeLabelSpacing = TimeSpan.FromHours(1),
+                    ShowDataMarkers = true,
+                    ShowToolTips = true,
+                }));
+
+            int MarkerCount() => comp.FindAll("circle.mud-chart-point").Count(x => !x.HasAttribute("opacity"));
+            MarkerCount().Should().Be(4);
+
+            await comp.FindAll("circle.mud-chart-point[opacity]")[1].MouseOverAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+            // Leaving the hovered marker out shifted the sequence numbers of every point drawn after it, so each hover rebuilt all of them.
+            MarkerCount().Should().Be(4);
+        }
     }
 }

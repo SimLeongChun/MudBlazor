@@ -77,9 +77,44 @@ public abstract class MudAxisChartBase<T, TOptions> : MudChartBase<T, TOptions>,
     protected readonly List<SvgText> VerticalValues = [];
 
     /// <summary>
+    /// Whether the X-axis label at this index is drawn, which <see cref="IAxisChartOptions.XAxisLabelInterval"/> decides.
+    /// </summary>
+    /// <remarks>
+    /// Only the axis is thinned out.
+    /// The label a tooltip shows is read separately, so a point whose axis label was skipped still names itself on hover.
+    /// </remarks>
+    /// <param name="index">The index of the vertical grid line.</param>
+    protected bool ShouldLabelVerticalGridLine(int index) =>
+        index % Math.Max(1, ChartOptions?.XAxisLabelInterval ?? 1) == 0;
+
+    /// <summary>
     /// The legends of the chart.
     /// </summary>
     protected readonly List<SvgLegend> Legends = [];
+
+    /// <summary>
+    /// Wraps a tooltip so the <see cref="ChartTooltip"/> inside it, including one from a <c>TooltipTemplate</c>, knows the room around the hovered point.
+    /// </summary>
+    /// <param name="tooltip">The tooltip to wrap.</param>
+    /// <param name="point">The hovered point the tooltip describes.</param>
+    /// <param name="labelOffset">How far above the point the tooltip is anchored.</param>
+    private protected RenderFragment WithTooltipRoom(RenderFragment tooltip, SvgPath? point, double labelOffset) => builder =>
+    {
+        // A tooltip placed by TooltipPositionFunc goes wherever the caller put it, so it gets no room to move into.
+        var room = point is not null && TooltipPositionFunc is null
+            ? new ChartTooltipRoom(
+                Above: point.LabelY - labelOffset,
+                Below: _boundHeight - point.LabelY - labelOffset,
+                FlipOffset: labelOffset * 2,
+                Left: point.LabelX,
+                Right: _boundWidth - point.LabelX)
+            : null;
+
+        builder.OpenComponent<CascadingValue<ChartTooltipRoom>>(0);
+        builder.AddComponentParameter(1, nameof(CascadingValue<ChartTooltipRoom>.Value), room);
+        builder.AddComponentParameter(2, nameof(CascadingValue<ChartTooltipRoom>.ChildContent), tooltip);
+        builder.CloseComponent();
+    };
 
     protected const double Epsilon = 1e-6;
     /// <summary>
