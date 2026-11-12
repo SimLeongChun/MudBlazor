@@ -18,12 +18,13 @@ public abstract class DefaultAxisChartOptions : DefaultChartOptions, IAxisChartO
     /// </summary>
     /// <remarks>
     /// Defaults to <c>20</c>.
-    /// Value must be greater than or equal to <c>1</c>.
+    /// Set it to <c>0</c> to pick a round spacing (1, 2 or 5 times a power of ten) that fits the values in about five steps, or fewer when <see cref="MaxNumYAxisTicks"/> is lower.
+    /// Values below <c>0</c> are treated as <c>0</c>.
     /// </remarks>
     public int YAxisTicks
     {
         get => _yAxisTicks;
-        set => _yAxisTicks = Math.Max(1, value);
+        set => _yAxisTicks = Math.Max(0, value);
     }
 
     /// <summary>
@@ -62,6 +63,9 @@ public abstract class DefaultAxisChartOptions : DefaultChartOptions, IAxisChartO
     /// If set, this function will be used to convert Y-axis values to strings for display purposes.
     /// If not provided, <see cref="YAxisFormat"/> will be used instead.
     /// </summary>
+    /// <remarks>
+    /// Tooltips can write values the same way with <c>{{Y_AXIS_VALUE}}</c> in <see cref="DefaultChartOptions.TooltipTitleFormat"/> or <see cref="DefaultChartOptions.TooltipSubtitleFormat"/>.
+    /// </remarks>
     public Func<double, string>? YAxisToStringFunc { get; set; }
 
     /// <summary>

@@ -635,6 +635,40 @@ namespace MudBlazor.UnitTests.Charts
         }
 
         /// <summary>
+        /// Gridlines leave their colour and weight to the stylesheet so they follow the theme.
+        /// </summary>
+        [Test]
+        public void BarChartGridlinesTakeTheirStrokeFromTheTheme()
+        {
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Bar)
+                .Add(p => p.ChartSeries, [new ChartSeries<double> { Name = "Series 1", Data = new double[] { 40, 20, 60 } }])
+                .Add(p => p.ChartLabels, ["A", "B", "C"])
+                .Add(p => p.ChartOptions, new BarChartOptions { YAxisLines = true, XAxisLines = true }));
+
+            var gridlines = comp.FindAll(".mud-charts-gridlines-yaxis path, .mud-charts-gridlines-xaxis-lines path");
+
+            // The colour and weight come from the stylesheet so they follow the theme, which a stroke attribute in the markup can't.
+            gridlines.Should().NotBeEmpty();
+            gridlines.Should().OnlyContain(x => !x.HasAttribute("stroke") && !x.HasAttribute("stroke-width"));
+        }
+
+        /// <summary>
+        /// YAxisTicks = 0 picks a round step over a range that reaches zero, since bars grow from it.
+        /// </summary>
+        [Test]
+        public void BarChartAutomaticYAxisStepIsRound()
+        {
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Bar)
+                .Add(p => p.ChartSeries, [new ChartSeries<double> { Name = "Series 1", Data = new double[] { 3, 7, 5, 2, 6 } }])
+                .Add(p => p.ChartLabels, ["A", "B", "C", "D", "E"])
+                .Add(p => p.ChartOptions, new BarChartOptions { YAxisTicks = 0 }));
+
+            comp.FindAll("g.mud-charts-yaxis text").Select(x => x.TextContent).Should().Equal("0", "2", "4", "6", "8");
+        }
+
+        /// <summary>
         /// A tooltip on a bar that reaches the top of a short chart flips into the bar, with or without a TooltipTemplate.
         /// </summary>
         [TestCase(false)]
@@ -706,6 +740,32 @@ namespace MudBlazor.UnitTests.Charts
             await comp.FindAll("path.mud-chart-bar")[0].MouseOverAsync(new());
             comp.WaitForAssertion(() => Tooltip().Bottom.Should().BeLessThan(shortTop));
             Tooltip().TipY.Should().BeGreaterThan(Tooltip().BaseY, "the triangle should point down at the top of the bar");
+        }
+
+        /// <summary>
+        /// {{Y_AXIS_VALUE}} writes the hovered bar's value with YAxisToStringFunc, while {{Y_VALUE}} stays as it was.
+        /// </summary>
+        [Test]
+        public async Task BarChartTooltipYAxisValueUsesTheAxisFormatter()
+        {
+            var chartSeries = new List<ChartSeries<double>>
+            {
+                new() { Name = "Series 1", Data = new double[] { 10, 20, 30 } }
+            };
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Bar)
+                .Add(p => p.ChartSeries, chartSeries)
+                .Add(p => p.ChartOptions, new BarChartOptions
+                {
+                    ChartPalette = _baseChartPalette,
+                    YAxisToStringFunc = value => $"{value}h",
+                    TooltipTitleFormat = "{{Y_AXIS_VALUE}} ({{Y_VALUE}})",
+                }));
+
+            await comp.FindAll("path.mud-chart-bar")[1].MouseOverAsync(new());
+
+            comp.Find("g.svg-tooltip").TextContent.Should().Contain("20h (20)");
         }
     }
 }

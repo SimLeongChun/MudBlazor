@@ -918,6 +918,55 @@ namespace MudBlazor.UnitTests.Charts
         }
 
         /// <summary>
+        /// YAxisTicks = 0 picks a round step that fits the values, including a step past a series that never changes.
+        /// </summary>
+        [TestCase(new double[] { 3, 7, 5, 2, 6 }, new[] { "2", "3", "4", "5", "6", "7" })]
+        [TestCase(new double[] { 0, 1000 }, new[] { "0", "200", "400", "600", "800", "1000" })]
+        [TestCase(new double[] { 5, 5, 5 }, new[] { "0", "10" })]
+        [TestCase(new double[] { 0, 0, 0 }, new[] { "0" })]
+        public void LineChartAutomaticYAxisStepIsRound(double[] data, string[] expectedLabels)
+        {
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Line)
+                .Add(p => p.ChartSeries, [new ChartSeries<double> { Name = "Series 1", Data = data }])
+                .Add(p => p.ChartLabels, data.Select((_, i) => i.ToString(CultureInfo.InvariantCulture)).ToArray())
+                .Add(p => p.ChartOptions, new LineChartOptions { YAxisTicks = 0 }));
+
+            comp.FindAll("g.mud-charts-yaxis text").Select(x => x.TextContent).Should().Equal(expectedLabels);
+        }
+
+        /// <summary>
+        /// The automatic step moves up to the next round number when the extra lines at each end would go over MaxNumYAxisTicks.
+        /// </summary>
+        [TestCase(new double[] { 0, 1000 }, 3, new[] { "0", "500", "1000" })]
+        [TestCase(new double[] { 3, 7 }, 3, new[] { "0", "5", "10" })]
+        [TestCase(new double[] { 3, 7 }, 2, new[] { "0", "10" })]
+        public void LineChartAutomaticYAxisStepStaysRoundWithinMaxNumYAxisTicks(double[] data, int maxTicks, string[] expectedLabels)
+        {
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Line)
+                .Add(p => p.ChartSeries, [new ChartSeries<double> { Name = "Series 1", Data = data }])
+                .Add(p => p.ChartLabels, data.Select((_, i) => i.ToString(CultureInfo.InvariantCulture)).ToArray())
+                .Add(p => p.ChartOptions, new LineChartOptions { YAxisTicks = 0, MaxNumYAxisTicks = maxTicks }));
+
+            comp.FindAll("g.mud-charts-yaxis text").Select(x => x.TextContent).Should().Equal(expectedLabels);
+        }
+
+        /// <summary>
+        /// Without YAxisTicks set the axis keeps its step of 20.
+        /// </summary>
+        [Test]
+        public void LineChartKeepsTheDefaultYAxisStep()
+        {
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Line)
+                .Add(p => p.ChartSeries, [new ChartSeries<double> { Name = "Series 1", Data = new double[] { 3, 7, 5, 2, 6 } }])
+                .Add(p => p.ChartLabels, ["A", "B", "C", "D", "E"]));
+
+            comp.FindAll("g.mud-charts-yaxis text").Select(x => x.TextContent).Should().Equal("0", "20");
+        }
+
+        /// <summary>
         /// A wide tooltip on the first or last point slides inside the chart while its triangle stays on the point.
         /// </summary>
         [TestCase(false)]
@@ -1011,6 +1060,59 @@ namespace MudBlazor.UnitTests.Charts
 
             // Leaving the hovered marker out shifted the sequence numbers of every point drawn after it, so each hover rebuilt all of them.
             MarkerCount().Should().Be(4);
+        }
+
+        /// <summary>
+        /// {{Y_AXIS_VALUE}} writes the hovered value with YAxisToStringFunc, while {{Y_VALUE}} stays as it was.
+        /// </summary>
+        [Test]
+        public async Task LineChartTooltipYAxisValueUsesTheAxisFormatter()
+        {
+            var chartSeries = new List<ChartSeries<double>>
+            {
+                new() { Name = "Series 1", Data = new double[] { 10, 20, 30, 40 } }
+            };
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Line)
+                .Add(p => p.ChartSeries, chartSeries)
+                .Add(p => p.ChartOptions, new LineChartOptions
+                {
+                    ChartPalette = _baseChartPalette,
+                    YAxisToStringFunc = value => $"{value}h",
+                    TooltipTitleFormat = "{{Y_AXIS_VALUE}} ({{Y_VALUE}})",
+                }));
+
+            await comp.FindAll("circle.mud-chart-point[opacity]")[1].MouseOverAsync(new());
+
+            comp.Find("g.svg-tooltip").TextContent.Should().Contain("20h (20)");
+        }
+
+        /// <summary>
+        /// {{Y_AXIS_VALUE}} falls back to YAxisFormat when there's no YAxisToStringFunc, in the subtitle as well as the title.
+        /// </summary>
+        [Test]
+        public async Task LineChartTooltipYAxisValueUsesTheAxisFormat()
+        {
+            var chartSeries = new List<ChartSeries<double>>
+            {
+                new() { Name = "Series 1", Data = new double[] { 10, 20, 30, 40 } }
+            };
+
+            var comp = Context.Render<MudChart<double>>(parameters => parameters
+                .Add(p => p.ChartType, ChartType.Line)
+                .Add(p => p.ChartSeries, chartSeries)
+                .Add(p => p.ChartOptions, new LineChartOptions
+                {
+                    ChartPalette = _baseChartPalette,
+                    YAxisFormat = "0.0",
+                    TooltipTitleFormat = "{{Y_VALUE}}",
+                    TooltipSubtitleFormat = "{{Y_AXIS_VALUE}}",
+                }));
+
+            await comp.FindAll("circle.mud-chart-point[opacity]")[1].MouseOverAsync(new());
+
+            comp.FindAll("g.svg-tooltip tspan").Select(x => x.TextContent).Should().Equal("20", "20.0");
         }
     }
 }
