@@ -6545,6 +6545,50 @@ namespace MudBlazor.UnitTests.Components
             grid.FilteredItems.FirstOrDefault()?.Id.Should().Be(comp.Instance.Guid2);
         }
 
+        /// <summary>
+        /// Opening a nullable Guid column's filter keeps every row until a value is typed, and clearing the value brings them back.
+        /// </summary>
+        [Test]
+        public async Task TableFilterNullableGuidKeepsRowsUntilValueIsEntered()
+        {
+            var popoverProvider = Context.Render<MudPopoverProvider>();
+            var comp = Context.Render<DataGridFilterGuid<Guid?>>();
+            var grid = comp.Instance.MudGridRef;
+
+            // Opening the column's filter adds a definition with no value yet.
+            await comp.Find(".filter-button").ClickAsync();
+            grid.FilterDefinitions.Single().Value.Should().BeNull();
+            comp.FindAll(".mud-table-body .mud-table-row").Count.Should().Be(2);
+
+            await popoverProvider.Find(".filter-input input").InputAsync(comp.Instance.Guid1.ToString());
+            comp.FindAll(".mud-table-body .mud-table-row").Count.Should().Be(1);
+
+            await popoverProvider.Find(".filter-input input").InputAsync("");
+            comp.FindAll(".mud-table-body .mud-table-row").Count.Should().Be(2);
+        }
+
+        /// <summary>
+        /// A nullable Guid filter without a value matches every row under both Equal and NotEqual.
+        /// </summary>
+        [TestCase(FilterOperator.Guid.Equal)]
+        [TestCase(FilterOperator.Guid.NotEqual)]
+        public void TableFilterNullableGuidWithoutValueMatchesAllRows(string filterOperator)
+        {
+            var comp = Context.Render<DataGridFilterGuid<Guid?>>();
+            var guidColumn = comp.Instance.MudGridRef.RenderedColumns.FirstOrDefault(x => x.PropertyName == "Id");
+            var filterDefinition = new FilterDefinition<DataGridFilterGuid<Guid?>.WeatherForecast>
+            {
+                Column = guidColumn,
+                Operator = filterOperator,
+                Value = null,
+            };
+
+            var matches = filterDefinition.GenerateFilterFunction();
+
+            matches(new() { Id = comp.Instance.Guid1, Date = DateTime.UtcNow, TemperatureC = 14, Summary = "Bracing" }).Should().BeTrue();
+            matches(new() { Id = null, Date = DateTime.UtcNow, TemperatureC = 14, Summary = "Bracing" }).Should().BeTrue();
+        }
+
         //[Test]
         //public async Task TableFilterGuidInDictionary()
         //{
@@ -10622,6 +10666,55 @@ namespace MudBlazor.UnitTests.Components
 
             dataGrid.Instance.SortDefinitions.Should().BeEmpty();
             dataGrid.FindAll("th").Should().OnlyContain(header => !header.HasAttribute("aria-sort"));
+        }
+
+        public class PricedItem
+        {
+            public decimal Price { get; set; }
+
+            public decimal? Discount { get; set; }
+        }
+
+        /// <summary>
+        /// A number filter holds a double, which has to match a decimal column holding the same number as written.
+        /// </summary>
+        [Test]
+        public void FilterDefinitionNumber_DecimalColumn_MatchesFractions()
+        {
+#pragma warning disable BL0005
+            var column = new PropertyColumn<PricedItem, decimal> { Property = x => x.Price };
+            var nullableColumn = new PropertyColumn<PricedItem, decimal?> { Property = x => x.Discount };
+#pragma warning restore BL0005
+            var item = new PricedItem { Price = 0.1m, Discount = 19.99m };
+
+            Func<PricedItem, bool> Filter(Column<PricedItem> filterColumn, string filterOperator, double value) =>
+                new FilterDefinition<PricedItem> { Column = filterColumn, Operator = filterOperator, Value = value }.GenerateFilterFunction();
+
+            Filter(column, FilterOperator.Number.Equal, 0.1)(item).Should().BeTrue();
+            Filter(column, FilterOperator.Number.NotEqual, 0.1)(item).Should().BeFalse();
+            Filter(column, FilterOperator.Number.GreaterThanOrEqual, 0.1)(item).Should().BeTrue();
+            Filter(column, FilterOperator.Number.LessThan, 0.1)(item).Should().BeFalse();
+            Filter(nullableColumn, FilterOperator.Number.Equal, 19.99)(item).Should().BeTrue();
+            Filter(nullableColumn, FilterOperator.Number.LessThanOrEqual, 19.99)(item).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Editing a decimal cell stores the number as typed, although the editor hands the column a double.
+        /// </summary>
+        [Test]
+        public void PropertyColumn_SetProperty_DecimalKeepsTypedValue()
+        {
+#pragma warning disable BL0005
+            var column = new PropertyColumn<PricedItem, decimal> { Property = x => x.Price };
+            var nullableColumn = new PropertyColumn<PricedItem, decimal?> { Property = x => x.Discount };
+#pragma warning restore BL0005
+            var item = new PricedItem();
+
+            column.SetProperty(item, 19.99d);
+            nullableColumn.SetProperty(item, 0.1d);
+
+            item.Price.Should().Be(19.99m);
+            item.Discount.Should().Be(0.1m);
         }
     }
 }
