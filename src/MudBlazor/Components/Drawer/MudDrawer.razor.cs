@@ -25,6 +25,7 @@ namespace MudBlazor
         private bool _closeOnPointerLeave;
         private bool _initial = true;
         private bool _isBrowserViewportSubscribed;
+        private bool _renderedWithoutViewportSubscription;
         private bool _keepInitialState;
         private Breakpoint? _lastObservedBreakpoint;
         private Breakpoint? _lastNotifiedBreakpoint;
@@ -68,11 +69,6 @@ namespace MudBlazor
             Variant == DrawerVariant.Mini && Breakpoint is not (Breakpoint.None or Breakpoint.Always) && IsBelowCurrentBreakpoint()
                 ? DrawerVariant.Temporary
                 : Variant;
-
-        // A closed drawer is moved off-screen, so inert keeps its content out of the tab order and the accessibility tree.
-        // A docked mini drawer still shows its rail while closed, so it stays interactive.
-        // The attribute is rendered before UserAttributes so a caller's own inert takes precedence.
-        private bool Inert => !_openState.Value && EffectiveVariant != DrawerVariant.Mini;
 
         private bool OverlayVisible => _openState.Value && Overlay && (EffectiveVariant == DrawerVariant.Temporary || (EffectiveVariant == DrawerVariant.Responsive && IsBelowCurrentBreakpoint()));
 
@@ -398,6 +394,11 @@ namespace MudBlazor
         {
             var shouldSubscribe = ShouldSubscribeToBrowserViewport();
 
+            if (!shouldSubscribe)
+            {
+                _renderedWithoutViewportSubscription = true;
+            }
+
             if (shouldSubscribe && !_isBrowserViewportSubscribed)
             {
                 // Marked before awaiting so a dispose or re-render during the immediate notification sees the pending subscription.
@@ -559,6 +560,17 @@ namespace MudBlazor
                 _lastUpdatedBreakpoint = browserViewportEventArgs.Breakpoint;
                 if (!IsResponsiveOrMini())
                 {
+                    return;
+                }
+
+                // A drawer that has rendered without a subscription and subscribes later, for example after its Variant changed to Responsive or Mini, keeps its open state.
+                // Every drawer used to subscribe on its first render, so only that first notification ever applied the initial open state.
+                // This tracks state instead of firstRender because a later render's after-render pass can subscribe before the first one finishes its own interop.
+                // The breakpoint is still recorded, so the overlay and a Mini drawer's temporary behaviour follow the current screen size.
+                if (_renderedWithoutViewportSubscription)
+                {
+                    DrawerContainerUpdate();
+                    await InvokeAsync(StateHasChanged);
                     return;
                 }
 

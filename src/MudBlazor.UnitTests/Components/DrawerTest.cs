@@ -922,6 +922,31 @@ namespace MudBlazor.UnitTests.Components
             comp.FindAll("aside.mud-drawer--open").Count.Should().Be(0);
         }
 
+        /// <summary>
+        /// Switching an open drawer to Responsive or Mini below its breakpoint keeps it open over an overlay instead of closing it.
+        /// </summary>
+        [TestCase(DrawerVariant.Persistent, DrawerVariant.Responsive)]
+        [TestCase(DrawerVariant.Persistent, DrawerVariant.Mini)]
+        [TestCase(DrawerVariant.Temporary, DrawerVariant.Responsive)]
+        [TestCase(DrawerVariant.Temporary, DrawerVariant.Mini)]
+        public async Task OpenDrawerSwitchedToResponsiveOrMiniBelowBreakpoint_StaysOpen(DrawerVariant initialVariant, DrawerVariant switchedVariant)
+        {
+            var browserViewportService = AddBrowserViewportService(BreakpointBrowserAssociatedSize(Breakpoint.Xs));
+            var openChanges = new List<bool>();
+            var comp = Context.Render<MudDrawer>(parameters => parameters
+                .Add(x => x.Variant, initialVariant)
+                .Add(x => x.Open, true)
+                .Add(x => x.OpenChanged, open => openChanges.Add(open)));
+
+            await comp.SetParametersAndRenderAsync(parameters => parameters
+                .Add(x => x.Variant, switchedVariant));
+
+            browserViewportService.GetInternalSubscription(comp.Instance).Should().NotBeNull();
+            openChanges.Should().BeEmpty();
+            comp.FindAll("aside.mud-drawer--open").Count.Should().Be(1);
+            comp.FindAll(".mud-drawer-overlay").Count.Should().Be(1);
+        }
+
         [Test, Combinatorial]
         public async Task NonResponsiveKeepInitialOpen_AllBreakpointsAsync(
             [Values(
@@ -1114,131 +1139,6 @@ namespace MudBlazor.UnitTests.Components
             // Verify the drawer loses the initial class after first interaction
             // This ensures the CSS transition will be applied (not skipped)
             comp.FindAll("aside.mud-drawer--initial").Count.Should().Be(0);
-        }
-
-        /// <summary>
-        /// A closed off-screen drawer is inert until opened.
-        /// </summary>
-        [Test]
-        [TestCase(DrawerVariant.Temporary)]
-        [TestCase(DrawerVariant.Persistent)]
-        [TestCase(DrawerVariant.Responsive)]
-        public async Task ClosedDrawer_IsInertUntilOpened(DrawerVariant variant)
-        {
-            _ = AddBrowserViewportService();
-            var comp = Context.Render<DrawerTest1>(parameters => parameters
-                .Add(x => x.Variant, variant));
-
-            comp.Find("aside.mud-drawer--closed").HasAttribute("inert").Should().BeTrue();
-
-            await comp.Find("#toggle-drawer-button").ClickAsync();
-            comp.Find("aside.mud-drawer--open").HasAttribute("inert").Should().BeFalse();
-
-            await comp.Find("#toggle-drawer-button").ClickAsync();
-            comp.Find("aside.mud-drawer--closed").HasAttribute("inert").Should().BeTrue();
-        }
-
-        /// <summary>
-        /// A closed mini drawer docked above its breakpoint keeps its visible icon rail interactive.
-        /// </summary>
-        [Test]
-        public async Task MiniLargeScreen_ClosedRailIsNotInert()
-        {
-            _ = AddBrowserViewportService(BreakpointBrowserAssociatedSize(Breakpoint.Lg));
-            var comp = Context.Render<DrawerResponsiveTest>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Mini));
-
-            comp.Find("aside.mud-drawer--closed.mud-drawer-mini").HasAttribute("inert").Should().BeFalse();
-
-            await comp.Find("#toggle-drawer-button").ClickAsync();
-            comp.Find("aside.mud-drawer--open.mud-drawer-mini").HasAttribute("inert").Should().BeFalse();
-        }
-
-        /// <summary>
-        /// A closed mini drawer below its breakpoint renders as a temporary drawer and is inert until opened.
-        /// </summary>
-        [Test]
-        public async Task MiniSmallScreen_ClosedDrawerIsInertUntilOpened()
-        {
-            _ = AddBrowserViewportService(BreakpointBrowserAssociatedSize(Breakpoint.Xs));
-            var comp = Context.Render<DrawerResponsiveTest>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Mini));
-
-            comp.Find("aside.mud-drawer--closed.mud-drawer-temporary").HasAttribute("inert").Should().BeTrue();
-
-            await comp.Find("#toggle-drawer-button").ClickAsync();
-            comp.Find("aside.mud-drawer--open.mud-drawer-temporary").HasAttribute("inert").Should().BeFalse();
-        }
-
-        /// <summary>
-        /// Resizing a mini drawer across its breakpoint makes it inert only while it renders as a closed temporary drawer.
-        /// </summary>
-        [Test]
-        public async Task Mini_ResizeAcrossBreakpoint_TogglesInert()
-        {
-            var browserViewportService = AddBrowserViewportService(BreakpointBrowserAssociatedSize(Breakpoint.Lg));
-            var comp = Context.Render<DrawerResponsiveTest>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Mini));
-            var subscription = browserViewportService.GetInternalSubscription(comp.FindComponent<MudDrawer>().Instance)!;
-
-            comp.Find("aside.mud-drawer--closed.mud-drawer-mini").HasAttribute("inert").Should().BeFalse();
-
-            await comp.InvokeAsync(async () => await browserViewportService.RaiseOnResized(new BrowserWindowSize { Height = 0, Width = 0 }, Breakpoint.Xs, subscription.JavaScriptListenerId));
-            comp.Find("aside.mud-drawer--closed.mud-drawer-temporary").HasAttribute("inert").Should().BeTrue();
-
-            // Returning above the breakpoint opens the mini drawer, so close it to check the docked rail again.
-            await comp.InvokeAsync(async () => await browserViewportService.RaiseOnResized(new BrowserWindowSize { Height = 720, Width = 1280 }, Breakpoint.Lg, subscription.JavaScriptListenerId));
-            comp.Find("aside.mud-drawer--open.mud-drawer-mini").HasAttribute("inert").Should().BeFalse();
-
-            await comp.Find("#toggle-drawer-button").ClickAsync();
-            comp.Find("aside.mud-drawer--closed.mud-drawer-mini").HasAttribute("inert").Should().BeFalse();
-        }
-
-        /// <summary>
-        /// A caller's own <c>inert</c> in <see cref="MudComponentBase.UserAttributes"/> overrides the generated value and renders once.
-        /// </summary>
-        [Test]
-        public void UserAttributesInert_OverridesGeneratedValue()
-        {
-            _ = AddBrowserViewportService();
-            var comp = Context.Render<MudDrawer>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Persistent)
-                .Add(x => x.Open, true)
-                .AddUnmatched("inert", true));
-
-            var aside = comp.Find("aside.mud-drawer--open");
-            aside.HasAttribute("inert").Should().BeTrue();
-            aside.Attributes.Count(a => a.Name == "inert").Should().Be(1);
-        }
-
-        /// <summary>
-        /// A caller's boolean false <c>inert</c> removes the attribute from a closed off-screen drawer.
-        /// </summary>
-        [Test]
-        public void UserAttributesInertFalse_OptsOutOfGeneratedValue()
-        {
-            _ = AddBrowserViewportService();
-            var comp = Context.Render<MudDrawer>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Persistent)
-                .AddUnmatched("inert", false));
-
-            comp.Find("aside.mud-drawer--closed").HasAttribute("inert").Should().BeFalse();
-        }
-
-        /// <summary>
-        /// The string "false" is not the boolean opt-out, so a closed drawer still renders the <c>inert</c> attribute.
-        /// </summary>
-        [Test]
-        public void UserAttributesInertStringFalse_StillRendersAttribute()
-        {
-            _ = AddBrowserViewportService();
-            var comp = Context.Render<MudDrawer>(parameters => parameters
-                .Add(x => x.Variant, DrawerVariant.Persistent)
-                .AddUnmatched("inert", "false"));
-
-            var aside = comp.Find("aside.mud-drawer--closed");
-            aside.HasAttribute("inert").Should().BeTrue();
-            aside.GetAttribute("inert").Should().Be("false");
         }
     }
 }
